@@ -194,7 +194,7 @@ class AuthView(viewsets.ViewSet):
                 import http.client
                 conn = http.client.HTTPConnection("api.msg91.com")
                 msg = 'Hi User, To reset the password for My On Leave account, please enter the following code: {}'.format(code)
-                conn.request("GET", "/api/sendhttp.php?sender=PORTAL&route=4&mobiles=" + mobile + "&authkey=197988Ax2hsxmp0PT35a82a823&country=91&message=" + msg)
+                conn.request("GET", "/api/sendhttp.php?sender=PORTAL&route=4&mobiles=" + mobile + "&authkey=&country=91&message=" + msg)
                 res = conn.getresponse()
                 data = res.read()
                 tok=Token()
