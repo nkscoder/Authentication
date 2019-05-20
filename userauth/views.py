@@ -1,6 +1,7 @@
 import jwt
 import string
 import json
+import re
 from django.shortcuts import render
 from rest_framework import viewsets
 from rest_framework import status
@@ -21,6 +22,10 @@ from rest_framework.parsers import JSONParser
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
+from string import Template
+import datetime as datetime_new
+from datetime import datetime
+
 
 from django.contrib.auth.models import User,Group
 # Create your views here.
@@ -51,18 +56,21 @@ class AuthView(viewsets.ViewSet):
         Get function for signup
         """
 
+        if len(request.POST):
+            request_data=request.POST
+        else:
+            request_data = request.data
 
-        mobile = request.data.get('phone')
-        email = request.data.get('email')
-        password = request.data.get('password')
-        confirm_password = request.data.get('con_password')
-        name = request.data.get('name')
-     
-        registration = request.data.get('registration')
-        # import ipdb; ipdb.set_trace()
+        mobile = request_data.get('phone')
+        email = request_data.get('email')
+        password = request_data.get('password')
+        confirm_password = request_data.get('con_password')
+        fname = request_data.get('fname')
+        lname = request_data.get('lname')
+
         result=email_validation(email)
 
-        if mobile is '' or password is '' or confirm_password is '' or name is '' or email is '':
+        if mobile is '' or password is '' or confirm_password is '' or fname is '' or email is '':
               return Response(data={'success': False,'msg': 'All fields are required'}, status=status.HTTP_401_UNAUTHORIZED)
         #mobile validation
         pattern = re.compile('^\d{10}$')
@@ -83,26 +91,40 @@ class AuthView(viewsets.ViewSet):
         if User.objects.filter(username__iexact=mobile).exists():
             return Response(data={'success': False,'msg': 'Mobile already registered.'}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-                register_user(email=email,password=password,mobile=mobile,name=name,registration=registration)
+                register_user(email=email,password=password,mobile=mobile,fname=fname,lname=lname)
                 user=User.objects.get(email=email)
                 token, created = RestToken.objects.get_or_create(user=user)
                 auth.login(request, user)
                 
                 try:
+
+                    template_l = Template('<p>Thank you for registering with $site_name. You can access your account by loggin in to - $site_login  with the email ID - $email and Your Password.</p><p>For any quries please contact : +$contact or email Us at $site_email</p><p>Regards,<br/>Team $site_name2 </p>').substitute(dict(site_name=settings.SITE_NAME, site_login=settings.SITE_LOGIN, email=email, contact=settings.SITE_CONTACT, site_email=settings.SITE_EMAIL, site_name2=settings.SITE_NAME))
+                    dict_to_send = {"email": email, "subject": settings.SITE_NAME+"! Thanks for register with us", "html_message": template_l}
+                    sendEmail(**dict_to_send)
+
+  
+                    #send the mail to the admin
+                    template_l = Template('<p>New Registration on $site_name</p><br/><p>Fname: $fname<br/>Lname: $lname<br/>Email: $email<br/>Mobile: $mobile<br/>Date: $date</p>').substitute(dict({"site_name": settings.SITE_NAME, "fname": fname, "lname": lname, "email": email, "mobile": mobile, "date": datetime_new.datetime.strftime(datetime_new.datetime.today(), "%d/%m/%y")}))
+                    for admin_email in admin_mails:
+                        dict_to_send = {"email": admin_email, "subject": settings.SITE_NAME +"! New Registration on "+settings.SITE_NAME, "html_message": template_l}
+                        sendEmail(**dict_to_send)
+
+
                         #send the thanks for the registration
-                        dict_to_send = {"email":email,"name":name,"subject":"On Leave! Thanks for register with us","template_name":'email/user_register_template.html'}
-                        send_email(**dict_to_send)
-                        #send the emails to the admins
-                        for admin_email in admin_mails:
-                            dict_to_send = {"email":admin_email,"user_email":email,"mobile":mobile,"name":name,"subject":"On Leave! New Registration On  ONLeave.IN","template_name":"email/admin_user_register_template.html"}
-                            send_email(**dict_to_send)
-                        return Response(data={'success': True,'profile':ProfileSerializer(instance=list(getProfile(request)), many=True).data ,'msg': 'Registration successful. kindly login now','token': str(token.key)},status=status.HTTP_200_OK)
+                        # dict_to_send = {"email":email,"name":fname,"subject":settings.SITE_NAME +"! Thanks for register with us","template_name":'auth/email/user_register_template.html'}
+                        # send_email(**dict_to_send)
+                        # #send the emails to the admins
+                        # for admin_email in admin_mails:
+                        #     dict_to_send = {"email": admin_email, "user_email": email, "mobile": mobile, "name": fname+' '+lname, "subject": settings.SITE_NAME +
+                        #                     "! New Registration On "+settings.SITE_NAME, "template_name": "auth/email/admin_user_register_template.html"}
+                        #     send_email(**dict_to_send)
+                    return Response(data={'success': True, 'user': UserSerializer(instance=list(getUser(request)), many=True).data, 'msg': 'Registration successful. kindly login now', 'token': str(token.key)}, status=status.HTTP_200_OK)
                 except Exception as e:
-                   return Response(data={'success': True,'profile':ProfileSerializer(instance=list(getProfile(request)), many=True).data ,'msg': 'Registration successful. kindly login now','token': str(token.key)},status=status.HTTP_200_OK)
+                    return Response(data={'success': True, 'user': UserSerializer(instance=list(getUser   (request)), many=True).data, 'msg': 'Registration successful. kindly login now', 'token': str(token.key)}, status=status.HTTP_200_OK)
         except Exception as e:
-            # import ipdb; ipdb.set_trace()
+            print(e)
             pass
-        return Response(data={'success': True,'msg': 'Some error occurred. Registration unsuccessfull','token': str(token.key)},status=status.HTTP_200_OK)
+        return Response(data={'success': False,'msg': 'Some error occurred. Registration unsuccessfull'},status=status.HTTP_200_OK)
 
 
     def login(self,request):
@@ -129,7 +151,7 @@ class AuthView(viewsets.ViewSet):
                     auth.login(request, user)
                     token, created = RestToken.objects.get_or_create(user=user)
                      
-                    profile=ProfileSerializer(instance=list(getProfile(request)), many=True).data 
+                    profile = UserSerializer(instance=list(getUser(request)), many=True).data
                     
                     return Response(data={'success': True,'msg': 'User Authenticated successfully','profile':profile,'token': str(token.key)},status=status.HTTP_200_OK)
             except Exception as e:
@@ -139,7 +161,7 @@ class AuthView(viewsets.ViewSet):
 
     def get_profile(self, request):
         try:
-            data =ProfileSerializer(instance=list(getProfile(request)), many=True).data 
+            data =UserSerializer(instance=list(getUser(request)), many=True).data 
             if data:
                 return Response(data={'status': True,'data': data}, status=status.HTTP_200_OK)
             return Response(data={'status': False,'msg': 'User not found'}, status=status.HTTP_200_OK)
@@ -150,7 +172,7 @@ class AuthView(viewsets.ViewSet):
     def post_profile(self, request):
         try:
             result =  postProfile(request)
-            data =ProfileSerializer(instance=list(getProfile(request)), many=True).data
+            data = UserSerializer(instance=list(getUser(request)), many=True).data
             if result:
                 return Response(data={'status': True,"msg":"Profile has been successfully updated",'data': data}, status=status.HTTP_200_OK)
             return Response(data={'status': False,'msg': 'Profile has been not successfully updated'}, status=status.HTTP_200_OK)
@@ -165,62 +187,31 @@ class AuthView(viewsets.ViewSet):
           Get function for generate_code
         """
         """Function to generate the otp send it to the user as well as set it for the user"""
-        mobile = request.data.get('mobile') or None
         email = request.data.get('email') or None
         user = None
-        if not mobile == None:
-            try:
-                user = User.objects.get(username=mobile)
-            except Exception as e:
-                    return Response(data={'success': False, 'msg': 'Mobile is not exists'},status=status.HTTP_200_OK)
 
-        if not email == None:
-            try:
-               # import ipdb; ipdb.set_trace()
-               user = User.objects.get(email=email)
-            except Exception as e:
-                # import ipdb; ipdb.set_trace()
-                return Response(data={'success': False, 'msg': 'Email does not exist'},status=status.HTTP_200_OK)
-
-        if user == None:
-            return Response(data={'success': False, 'msg': 'Email or Mobile is not exists'},status=status.HTTP_200_OK)
+        try:
+            user = User.objects.get(email=email)
+        except Exception as e:
+            return Response(data={'success': False, 'msg': 'Email does not exist'},status=status.HTTP_200_OK)
 
         token = jwt.encode({'exp': datetime.utcnow() + timedelta(hours=1)}, 'password',algorithm='HS256')
         token = token.decode('utf-8')
         code=generate_random_code()
         Token.objects.filter(user=user).delete()
-        if not mobile == None:
-            try:
-                import http.client
-                conn = http.client.HTTPConnection("api.msg91.com")
-                msg = 'Hi User, To reset the password for My On Leave account, please enter the following code: {}'.format(code)
-                conn.request("GET", "/api/sendhttp.php?sender=PORTAL&route=4&mobiles=" + mobile + "&authkey=&country=91&message=" + msg)
-                res = conn.getresponse()
-                data = res.read()
-                tok=Token()
-                tok.user=user
-                tok.token=token
-                tok.code=code
-                tok.save()
-                return Response(data={'success': True, 'token':token,'msg': 'Send Otp on mobile number'},status=status.HTTP_200_OK)
-            except Exception as e:
-
-                return Response(data={'success': False, 'msg': 'Do not Send Otp on mobile number'},status=status.HTTP_200_OK)
-
-        if not email == None:
-            try:
-                tok = Token()
-                tok.user=user
-                tok.token=token
-                tok.code=code
-                tok.save()
-                url = settings.SERVER_ADDRESS + 'reset/password/?token=' + token
-                dict_to_send = {"email": email,'url':'none', 'code':code, "subject": "On Leave!Forgot Password",
-                                "template_name": 'email/user_forgot_passwprd_template.html'}
-                send_email(**dict_to_send)
-                return Response(data={'success': True, 'token':token, 'msg': 'Kindly check your email to reset password'},status=status.HTTP_200_OK)
-            except Exception as e:
-                return Response(data={'status': False, 'msg': 'No such email found in our records. Kindly register with us'},status=status.HTTP_200_OK)
+        try:
+            tok = Token()
+            tok.user=user
+            tok.token=token
+            tok.code=code
+            tok.save()
+            url = settings.SERVER_ADDRESS + 'auth/reset/password/?token=' + token
+            dict_to_send = {"email": email,'url':'none', 'code':code, "subject": settings.SITE_NAME+"!Forgot Password",
+                            "template_name": 'auth/email/user_forgot_passwprd_template.html'}
+            send_email(**dict_to_send)
+            return Response(data={'success': True, 'token':token, 'msg': 'Kindly check your email to reset password'},status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(data={'status': False, 'msg': 'No such email found in our records. Kindly register with us'},status=status.HTTP_200_OK)
         return Response(data={'status': False, 'msg': 'No such email found in our records. Kindly register with us'},status=status.HTTP_200_OK)
 
 
