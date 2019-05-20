@@ -206,7 +206,7 @@ class AuthView(viewsets.ViewSet):
             tok.code=code
             tok.save()
             url = settings.SERVER_ADDRESS + 'auth/reset/password/?token=' + token
-            dict_to_send = {"email": email,'url':'none', 'code':code, "subject": settings.SITE_NAME+"!Forgot Password",
+            dict_to_send = {"email": email,'url':'none',"site_name":settings.SITE_NAME, 'code':code, "subject": settings.SITE_NAME+"!Forgot Password",
                             "template_name": 'auth/email/user_forgot_passwprd_template.html'}
             send_email(**dict_to_send)
             return Response(data={'success': True, 'token':token, 'msg': 'Kindly check your email to reset password'},status=status.HTTP_200_OK)
